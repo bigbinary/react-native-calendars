@@ -1,18 +1,14 @@
-import includes from 'lodash/includes';
 import PropTypes from 'prop-types';
-import memoize from 'memoize-one';
 import XDate from 'xdate';
-
 import React, {Component, Fragment, ReactNode} from 'react';
 import {ActivityIndicator, Platform, View, Text, TouchableOpacity, Image, StyleProp, ViewStyle, AccessibilityActionEvent, ColorValue} from 'react-native';
+import moment from 'moment';
+
 // @ts-expect-error
 import {shouldUpdate} from '../../component-updater';
-// @ts-expect-error
-import {weekDayNames} from '../../dateutils';
 import {
   CHANGE_MONTH_LEFT_ARROW,
   CHANGE_MONTH_RIGHT_ARROW,
-  HEADER_DAY_NAMES,
   HEADER_LOADING_INDICATOR,
   HEADER_MONTH_NAME
   // @ts-expect-error
@@ -43,8 +39,6 @@ interface Props {
   disableArrowLeft?: boolean;
   /** Disable right arrow */
   disableArrowRight?: boolean;
-  /** Apply custom disable color to selected day indexes */
-  disabledDaysIndexes?: number[];
   /** Replace default month and year title with custom one. the function receive a date as parameter */
   renderHeader?: (date?: XDate) => ReactNode;
   /** Provide aria-level for calendar heading for proper accessibility when used with web (react-native-web) */
@@ -53,6 +47,14 @@ interface Props {
   style?: StyleProp<ViewStyle>;
   accessibilityElementsHidden?: boolean;
   importantForAccessibility?: 'auto' | 'yes' | 'no' | 'no-hide-descendants';
+  showWeeklyTotal: boolean;
+  /** Handler which gets executed when press Month name */
+  onMonthPress: () => void;
+  showCalendar: boolean;
+  selectedDate: string;
+  dayFormat: string;
+  addDay?: (num: number) => void;
+
 }
 export type CalendarHeaderProps = Props;
 
@@ -82,17 +84,24 @@ class CalendarHeader extends Component<Props> {
     disableArrowLeft: PropTypes.bool,
     /** Disable right arrow. Default = false */
     disableArrowRight: PropTypes.bool,
-    /** Apply custom disable color to selected day indexes */
-    disabledDaysIndexes: PropTypes.arrayOf(PropTypes.number),
     /** Replace default month and year title with custom one. the function receive a date as parameter. */
     renderHeader: PropTypes.any,
     /** Provide aria-level for calendar heading for proper accessibility when used with web (react-native-web) */
-    webAriaLevel: PropTypes.number
+    webAriaLevel: PropTypes.number,
+    showWeeklyTotal: PropTypes.bool,
+    testID: PropTypes.string,
+    /** Handler which gets executed when press Month name */
+    onMonthPress: PropTypes.func,
+    showCalendar: PropTypes.bool,
+    selectedDate: PropTypes.string,
+    dayFormat: PropTypes.string,
+    addDay: PropTypes.func,
   };
 
   static defaultProps = {
     monthFormat: 'MMMM yyyy',
-    webAriaLevel: 1
+    webAriaLevel: 1,
+    dayFormat: 'dddd, DD MMMM YYYY',
   };
   style: any;
 
@@ -114,81 +123,65 @@ class CalendarHeader extends Component<Props> {
       'monthFormat',
       'renderArrow',
       'disableArrowLeft',
-      'disableArrowRight'
+      'disableArrowRight',
+      'onMonthPress',
+      'showCalendar',
+      'selectedDate',
     ]);
   }
 
-  addMonth = () => {
-    const {addMonth} = this.props;
-    addMonth?.(1);
+  addMonthOrDay = () => {
+    const {addMonth, showCalendar, addDay} = this.props;
+    if (showCalendar) addMonth?.(1);
+    else addDay?.(1);
   };
 
-  subtractMonth = () => {
-    const {addMonth} = this.props;
-    addMonth?.(-1);
+  subtractMonthOrDay = () => {
+    const {addMonth, showCalendar, addDay} = this.props;
+    if (showCalendar) addMonth?.(-1);
+    else addDay?.(-1);
   };
 
   onPressLeft = () => {
     const {onPressArrowLeft, month} = this.props;
 
     if (typeof onPressArrowLeft === 'function') {
-      return onPressArrowLeft(this.subtractMonth, month);
+      return onPressArrowLeft(this.subtractMonthOrDay, month);
     }
 
-    return this.subtractMonth();
+    return this.subtractMonthOrDay();
   };
 
   onPressRight = () => {
     const {onPressArrowRight, month} = this.props;
 
     if (typeof onPressArrowRight === 'function') {
-      return onPressArrowRight(this.addMonth, month);
+      return onPressArrowRight(this.addMonthOrDay, month);
     }
 
-    return this.addMonth();
+    return this.addMonthOrDay();
   };
 
-  renderWeekDays = memoize(weekDaysNames => {
-    const {disabledDaysIndexes} = this.props;
-
-    return weekDaysNames.map((day: string, idx: number) => {
-      const dayStyle = [this.style.dayHeader];
-
-      if (includes(disabledDaysIndexes, idx)) {
-        dayStyle.push(this.style.disabledDayHeader);
-      }
-
-      if (this.style[`dayTextAtIndex${idx}`]) {
-        dayStyle.push(this.style[`dayTextAtIndex${idx}`]);
-      }
-
-      return (
-        <Text allowFontScaling={false} key={idx} style={dayStyle} numberOfLines={1} accessibilityLabel={''}>
-          {day}
-        </Text>
-      );
-    });
-  });
-
   renderHeader = () => {
-    const {renderHeader, month, monthFormat, testID, webAriaLevel} = this.props;
+    const {renderHeader, month, monthFormat, testID, webAriaLevel, onMonthPress, showCalendar, selectedDate, dayFormat} = this.props;
     const webProps = Platform.OS === 'web' ? {'aria-level': webAriaLevel} : {};
 
+    const headerText = showCalendar ? month?.toString(monthFormat) : moment(selectedDate)?.format(dayFormat);
     if (renderHeader) {
       return renderHeader(month);
     }
 
     return (
-      <Fragment>
+      <TouchableOpacity onPress={() => onMonthPress()} disabled={!onMonthPress}>
         <Text
           allowFontScaling={false}
           style={this.style.monthText}
           testID={testID ? `${HEADER_MONTH_NAME}-${testID}` : HEADER_MONTH_NAME}
           {...webProps}
         >
-          {month?.toString(monthFormat)}
+          {headerText}
         </Text>
-      </Fragment>
+      </TouchableOpacity>
     );
   };
 
@@ -235,20 +228,6 @@ class CalendarHeader extends Component<Props> {
     }
   }
 
-  renderDayNames() {
-    const {firstDay, hideDayNames, showWeekNumbers, testID} = this.props;
-    const weekDaysNames = weekDayNames(firstDay);
-
-    if (!hideDayNames) {
-      return (
-        <View style={this.style.week} testID={testID ? `${HEADER_DAY_NAMES}-${testID}` : HEADER_DAY_NAMES}>
-          {showWeekNumbers && <Text allowFontScaling={false} style={this.style.dayHeader}></Text>}
-          {this.renderWeekDays(weekDaysNames)}
-        </View>
-      );
-    }
-  }
-
   render() {
     const {style, testID} = this.props;
 
@@ -274,7 +253,6 @@ class CalendarHeader extends Component<Props> {
           </View>
           {this.renderArrow('right')}
         </View>
-        {this.renderDayNames()}
       </View>
     );
   }

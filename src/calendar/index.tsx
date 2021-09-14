@@ -1,15 +1,15 @@
 import invoke from 'lodash/invoke';
+import includes from 'lodash/includes';
 import PropTypes from 'prop-types';
 import XDate from 'xdate';
 import memoize from 'memoize-one';
-
 import React, {Component, RefObject} from 'react';
-import {View, ViewStyle, StyleProp} from 'react-native';
+import {View, ViewStyle, StyleProp, Text} from 'react-native';
 // @ts-expect-error
 import GestureRecognizer, {swipeDirections} from 'react-native-swipe-gestures';
 
 // @ts-expect-error
-import {page, isGTE, isLTE, sameMonth} from '../dateutils';
+import {page, isGTE, isLTE, sameMonth, weekDayNames} from '../dateutils';
 // @ts-expect-error
 import {xdateToData, parseDate, toMarkingFormat} from '../interface';
 // @ts-expect-error
@@ -18,7 +18,7 @@ import {getState} from '../day-state-manager';
 // @ts-expect-error
 import {extractComponentProps} from '../component-updater';
 // @ts-expect-error
-import {WEEK_NUMBER} from '../testIDs';
+import {WEEK_NUMBER, HEADER_DAY_NAMES} from '../testIDs';
 import {Theme, DateData} from '../types';
 import styleConstructor from './style';
 import CalendarHeader, {CalendarHeaderProps} from './header';
@@ -73,6 +73,12 @@ export interface CalendarProps extends CalendarHeaderProps, DayProps {
   customHeader?: any;
   /** Allow selection of dates before minDate or after maxDate */
   allowSelectionOutOfRange?: boolean;
+  /** Toggle Calendar view */
+  showCalendar?: boolean;
+  /** Function that updates given date */
+  updateSelectedDate: (date: DateData) => void;
+  /** Apply custom disable color to selected day indexes */
+  disabledDaysIndexes?: number[];
 }
 
 interface CalendarState {
@@ -130,15 +136,24 @@ class Calendar extends Component<CalendarProps, CalendarState> {
     /** Allow rendering of a totally custom header */
     customHeader: PropTypes.any,
     /** Allow selection of dates before minDate or after maxDate */
-    allowSelectionOutOfRange: PropTypes.bool
+    allowSelectionOutOfRange: PropTypes.bool,
+    showWeeklyTotal: PropTypes.bool,
+    /** Toggle Calendar view */
+    showCalendar: PropTypes.bool,
+    /** Update the date that is selected by pressing on left or right arrow */
+    updateSelectedDate: PropTypes.func,
+     /** Apply custom disable color to selected day indexes */
+     disabledDaysIndexes: PropTypes.arrayOf(PropTypes.number),
   };
   static defaultProps = {
-    enableSwipeMonths: false
+    enableSwipeMonths: false,
+    showCalendar: true
   };
 
   state = {
     currentMonth: this.props.current ? parseDate(this.props.current) : new XDate()
   };
+
   style = styleConstructor(this.props.theme);
   header: RefObject<CalendarHeader> = React.createRef();
 
@@ -151,13 +166,26 @@ class Calendar extends Component<CalendarProps, CalendarState> {
       return;
     }
 
-    this.setState({currentMonth: day.clone()}, () => {
+    this.setState({currentMonth: day.clone().setDate(1)}, () => {
       if (!doNotTriggerListeners) {
         const currMont = this.state.currentMonth.clone();
         invoke(this.props, 'onMonthChange', xdateToData(currMont));
         invoke(this.props, 'onVisibleMonthsChange', [xdateToData(currMont)]);
       }
     });
+  };
+
+  addDay = (count: number) => {
+    const currentDate = new XDate(new Date(this.props.selectedDate).toISOString());
+    this.updateDay(currentDate.clone().addDays(count));
+  };
+
+  updateDay = (day: any) => {
+    const currentDate = day.clone();
+    this.setState({currentMonth: currentDate}, () => {
+      invoke(this.props, 'onDayPress', xdateToData(currentDate));
+    });
+    this.props.updateSelectedDate(day.toString('yyyy-MM-dd'));
   };
 
   handleDayInteraction(date: Date, interaction?: (date: DateData) => void) {
@@ -250,6 +278,20 @@ class Calendar extends Component<CalendarProps, CalendarState> {
     );
   }
 
+  round = (value, decimals = 2) => {
+    return Number(Math.round(value + 'e' + decimals) + 'e-' + decimals);
+  };
+
+  calculateWeeklyTotal(days: any) {
+    return this.round(
+      days.reduce((current: any, day: any) => {
+        const date = this.props.markedDates?.[day.toString('yyyy-MM-dd')] || {};
+        return (date.hours || 0) + current;
+      }, 0),
+      2
+    );
+  }
+
   renderWeek(days: any, id: number) {
     const week = [];
 
@@ -261,11 +303,60 @@ class Calendar extends Component<CalendarProps, CalendarState> {
       week.unshift(this.renderWeekNumber(days[days.length - 1].getWeek()));
     }
 
+    if (this.props.showWeeklyTotal) {
+      const uniqueKey = `weektotal-${id}`;
+      week.push(
+        <View key={uniqueKey} style={this.style.dayContainer}>
+          <Text style={this.style.total}>{this.calculateWeeklyTotal(days)}</Text>
+        </View>
+      );
+    }
+
     return (
       <View style={this.style.week} key={id}>
         {week}
       </View>
     );
+  }
+
+  renderWeekDays = memoize(weekDaysNames => {
+    const {disabledDaysIndexes} = this.props;
+    return weekDaysNames.map((day: string, idx: number) => {
+      const dayStyle = [this.style.dayHeader];
+
+      if (includes(disabledDaysIndexes, idx)) {
+        dayStyle.push(this.style.disabledDayHeader);
+      }
+
+      if (this.style[`dayTextAtIndex${idx}`]) {
+        dayStyle.push(this.style[`dayTextAtIndex${idx}`]);
+      }
+
+      return (
+        <Text allowFontScaling={false} key={idx} style={dayStyle} numberOfLines={1} accessibilityLabel={''}>
+          {day}
+        </Text>
+      );
+    });
+  });
+
+  renderDayNames() {
+    const {firstDay, hideDayNames, showWeekNumbers, testID, showWeeklyTotal} = this.props;
+    const weekDaysNames = weekDayNames(firstDay);
+
+    if (!hideDayNames) {
+      return (
+        <View style={this.style.week} testID={testID ? `${HEADER_DAY_NAMES}-${testID}` : HEADER_DAY_NAMES}>
+          {showWeekNumbers && <Text allowFontScaling={false} style={this.style.total}></Text>}
+          {this.renderWeekDays(weekDaysNames)}
+          {showWeeklyTotal && (
+             <Text allowFontScaling={false} numberOfLines={1} style={this.style.dayHeader}>
+               Tot
+             </Text>
+           )}
+        </View>
+      );
+    }
   }
 
   renderMonth() {
@@ -283,7 +374,7 @@ class Calendar extends Component<CalendarProps, CalendarState> {
   }
 
   renderHeader() {
-    const {customHeader, headerStyle, displayLoadingIndicator, markedDates, testID} = this.props;
+    const {customHeader, headerStyle, displayLoadingIndicator, markedDates, testID, selectedDate, showCalendar} = this.props;
     const current = parseDate(this.props.current);
     let indicator;
 
@@ -305,14 +396,18 @@ class Calendar extends Component<CalendarProps, CalendarState> {
         style={headerStyle}
         ref={this.header}
         month={this.state.currentMonth}
+        selectedDate={selectedDate}
+        showCalendar={showCalendar}
         addMonth={this.addMonth}
+        addDay={this.addDay}
         displayLoadingIndicator={indicator}
+        showWeeklyTotal={this.props.showWeeklyTotal}
       />
     );
   }
 
   render() {
-    const {enableSwipeMonths, style} = this.props;
+    const {enableSwipeMonths, style, showCalendar} = this.props;
     const GestureComponent = enableSwipeMonths ? GestureRecognizer : View;
     const gestureProps = enableSwipeMonths ? this.swipeProps : undefined;
 
@@ -324,7 +419,8 @@ class Calendar extends Component<CalendarProps, CalendarState> {
           importantForAccessibility={this.props.importantForAccessibility} // Android
         >
           {this.renderHeader()}
-          {this.renderMonth()}
+          {showCalendar && this.renderDayNames()}
+          {showCalendar && this.renderMonth()}
         </View>
       </GestureComponent>
     );
