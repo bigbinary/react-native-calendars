@@ -351,7 +351,7 @@ class Calendar extends Component<CalendarProps, CalendarState> {
           {this.renderWeekDays(weekDaysNames)}
           {showWeeklyTotal && (
              <Text allowFontScaling={false} numberOfLines={1} style={this.style.dayHeader}>
-               Tot
+               Total
              </Text>
            )}
         </View>

@@ -10,11 +10,14 @@ export default function styleConstructor(theme: Theme = {}) {
       alignItems: 'center'
     },
     base: {
-      width: 32,
-      height: 32,
-      alignItems: 'center'
+      width: 40,
+      height: 40,
+      alignItems: 'center',
+      justifyContent: 'center'
     },
     text: {
+      width: 30,
+      textAlign: 'center',
       marginTop: Platform.OS === 'android' ? 4 : 6,
       fontSize: appStyle.textDayFontSize,
       fontFamily: appStyle.textDayFontFamily,
@@ -28,7 +31,7 @@ export default function styleConstructor(theme: Theme = {}) {
     },
     selected: {
       backgroundColor: appStyle.selectedDayBackgroundColor,
-      borderRadius: 16
+      borderRadius: 20
     },
     marked: {
       borderWidth: 1,
