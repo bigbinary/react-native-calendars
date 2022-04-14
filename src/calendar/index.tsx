@@ -176,7 +176,7 @@ class Calendar extends Component<CalendarProps, CalendarState> {
   };
 
   addDay = (count: number) => {
-    const currentDate = new XDate(new Date(this.props.selectedDate).toISOString());
+    const currentDate = new XDate(this.props.selectedDate);
     this.updateDay(currentDate.clone().addDays(count));
   };
 
